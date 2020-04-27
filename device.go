@@ -46,6 +46,7 @@ type device struct {
 	key        []byte
 	iv         []byte
 	id         []byte
+	headers    bool
 }
 
 type unencryptedRequest struct {
@@ -53,7 +54,7 @@ type unencryptedRequest struct {
 	payload []byte
 }
 
-func newDevice(remoteAddr string, mac net.HardwareAddr, timeout, deviceType int) (*device, error) {
+func newDevice(remoteAddr string, mac net.HardwareAddr, timeout, deviceType int, headers bool) (*device, error) {
 	rand.Seed(time.Now().Unix())
 	d := &device{
 		remoteAddr: remoteAddr,
@@ -64,6 +65,7 @@ func newDevice(remoteAddr string, mac net.HardwareAddr, timeout, deviceType int)
 		key:        []byte{0x09, 0x76, 0x28, 0x34, 0x3f, 0xe9, 0x9e, 0x23, 0x76, 0x5c, 0x15, 0x13, 0xac, 0xcf, 0x8b, 0x02},
 		iv:         []byte{0x56, 0x2e, 0x17, 0x99, 0x6d, 0x09, 0x3d, 0x28, 0xdd, 0xb3, 0xba, 0x69, 0x5a, 0x2e, 0x6f, 0x58},
 		id:         []byte{0, 0, 0, 0},
+		headers: 	headers,
 	}
 
 	resp, err := d.serverRequest(authenticatePayload())
@@ -84,7 +86,7 @@ func newDevice(remoteAddr string, mac net.HardwareAddr, timeout, deviceType int)
 // newManualDevice lets you create a device by specifying a key and id,
 // skipping the authentication phase. All fields aside from the mac address are
 // mandatory.
-func newManualDevice(ip, mac, key, id string, timeout, deviceType int) (*device, error) {
+func newManualDevice(ip, mac, key, id string, timeout, deviceType int, headers bool) (*device, error) {
 	parsedip := net.ParseIP(ip)
 	if parsedip.String() == "<nil>" {
 		return nil, fmt.Errorf("%v is not a valid IP address", ip)
@@ -118,6 +120,7 @@ func newManualDevice(ip, mac, key, id string, timeout, deviceType int) (*device,
 		key:        keyhex,
 		iv:         []byte{0x56, 0x2e, 0x17, 0x99, 0x6d, 0x09, 0x3d, 0x28, 0xdd, 0xb3, 0xba, 0x69, 0x5a, 0x2e, 0x6f, 0x58},
 		id:         idhex,
+		headers: 	headers,
 	}
 	if !skipmac {
 		d.mac = parsedmac
@@ -349,19 +352,8 @@ func (d *device) sendString(s string) error {
 }
 
 func (d *device) sendData(data []byte) error {
-	reqPayload := make([]byte, len(data)+4, len(data)+4)
-	reqPayload[0] = 0x02
-	reqPayload[1] = 0x00
-	reqPayload[2] = 0x00
-	reqPayload[3] = 0x00
-	copy(reqPayload[4:], data)
-	req := unencryptedRequest{
-		command: 0x6a,
-		payload: reqPayload,
-	}
-
 	defer d.close()
-	resp, err := d.serverRequest(req)
+	resp, err := d.serverRequest(sendDataPayload(data, d.headers))
 	if err != nil {
 		return fmt.Errorf("error reading response while trying to send data to device: %v", err)
 	}
@@ -375,7 +367,7 @@ func (d *device) sendData(data []byte) error {
 }
 
 func (d *device) checkData() (Response, error) {
-	resp, err := d.serverRequest(checkDataPayload())
+	resp, err := d.serverRequest(checkDataPayload(d.headers))
 	if err != nil {
 		return resp, fmt.Errorf("error making CheckData request: %v", err)
 	}
@@ -384,7 +376,7 @@ func (d *device) checkData() (Response, error) {
 }
 
 func (d *device) checkRFData() (Response, error) {
-	resp, err := d.serverRequest(checkRFDataPayload())
+	resp, err := d.serverRequest(checkRFDataPayload(d.headers))
 	if err != nil {
 		return resp, fmt.Errorf("error making CheckRFData request: %v", err)
 	}
@@ -393,7 +385,7 @@ func (d *device) checkRFData() (Response, error) {
 }
 
 func (d *device) checkRFData2() (Response, error) {
-	resp, err := d.serverRequest(checkRFData2Payload())
+	resp, err := d.serverRequest(checkRFData2Payload(d.headers))
 	if err != nil {
 		return resp, fmt.Errorf("error making CheckRFData2 request: %v", err)
 	}
@@ -404,7 +396,7 @@ func (d *device) checkRFData2() (Response, error) {
 func (d *device) learn() (Response, error) {
 	deadline := time.Now().Add(learnTimeout * time.Second)
 	defer d.close()
-	_, err := d.serverRequest(enterLearningPayload())
+	_, err := d.serverRequest(enterLearningPayload(d.headers))
 	if err != nil {
 		return Response{}, fmt.Errorf("error making learning request: %v", err)
 	}
@@ -436,7 +428,7 @@ func (d *device) learn() (Response, error) {
 func (d *device) learnRF() (Response, error) {
 	deadline := time.Now().Add(learnTimeout * time.Second)
 	defer d.close()
-	_, err := d.serverRequest(enterRFSweepPayload())
+	_, err := d.serverRequest(enterRFSweepPayload(d.headers))
 	if err != nil {
 		return Response{}, fmt.Errorf("error making learning request: %v", err)
 	}
@@ -487,7 +479,7 @@ func (d *device) learnRF() (Response, error) {
 
 func (d *device) checkTemperature() (Response, error) {
 	defer d.close()
-	resp, err := d.serverRequest(checkTemperaturePayload())
+	resp, err := d.serverRequest(checkTemperaturePayload(d.headers))
 	if err != nil {
 		return resp, fmt.Errorf("error making check temperature request: %v", err)
 	}
@@ -500,7 +492,7 @@ func (d *device) checkTemperature() (Response, error) {
 func (d *device) cancelLearn() {
 	//d.sendPacket(cancelLearnPayload())
 	//d.close()
-	d.serverRequest(cancelLearnPayload())
+	d.serverRequest(cancelLearnPayload(d.headers))
 	d.close()
 }
 
@@ -514,7 +506,7 @@ func (d *device) setPowerState(data string) error {
 		return fmt.Errorf("set power state expects an argument of 0, 00, 1, or 01 - got %v instead", data)
 	}
 
-	resp, err := d.serverRequest(setPowerStatePayload(state))
+	resp, err := d.serverRequest(setPowerStatePayload(state, d.headers))
 	d.close()
 
 	if err != nil {
@@ -531,7 +523,7 @@ func (d *device) setPowerState(data string) error {
 }
 
 func (d *device) getPowerState() (bool, error) {
-	resp, err := d.serverRequest(getPowerStatePayload())
+	resp, err := d.serverRequest(getPowerStatePayload(d.headers))
 	d.close()
 
 	if err != nil {
@@ -590,66 +582,84 @@ func authenticatePayload() unencryptedRequest {
 	return req
 }
 
-func checkDataPayload() unencryptedRequest {
+func sendDataPayload(data []byte, headers bool) unencryptedRequest {
+	reqPayload := make([]byte, len(data)+4, len(data)+4)
+	if headers {
+		reqPayload[0] = 0xd0
+		reqPayload[2] = 0x02
+		copy(reqPayload[6:], data)
+		fmt.Println(reqPayload)
+	} else {
+		reqPayload[0] = 0x02
+		copy(reqPayload[4:], data)
+		fmt.Println(reqPayload)
+	}
 	return unencryptedRequest{
 		command: 0x6a,
-		payload: basicRequestPayload(4),
+		payload: reqPayload,
 	}
 }
 
-func enterLearningPayload() unencryptedRequest {
+func checkDataPayload(headers bool) unencryptedRequest {
 	return unencryptedRequest{
 		command: 0x6a,
-		payload: basicRequestPayload(3),
+		payload: basicRequestPayload(4, headers),
 	}
 }
 
-func checkTemperaturePayload() unencryptedRequest {
+func enterLearningPayload(headers bool) unencryptedRequest {
 	return unencryptedRequest{
 		command: 0x6a,
-		payload: basicRequestPayload(1),
+		payload: basicRequestPayload(3, headers),
 	}
 }
 
-func cancelLearnPayload() unencryptedRequest {
+func checkTemperaturePayload(headers bool) unencryptedRequest {
 	return unencryptedRequest{
 		command: 0x6a,
-		payload: basicRequestPayload(0x1e),
+		payload: basicRequestPayload(1, headers),
 	}
 }
 
-func enterRFSweepPayload() unencryptedRequest {
+func cancelLearnPayload(headers bool) unencryptedRequest {
 	return unencryptedRequest{
 		command: 0x6a,
-		payload: basicRequestPayload(0x19),
+		payload: basicRequestPayload(0x1e, headers),
 	}
 }
 
-func checkRFDataPayload() unencryptedRequest {
+func enterRFSweepPayload(headers bool) unencryptedRequest {
 	return unencryptedRequest{
 		command: 0x6a,
-		payload: basicRequestPayload(0x1a),
+		payload: basicRequestPayload(0x19, headers),
 	}
 }
 
-func checkRFData2Payload() unencryptedRequest {
+func checkRFDataPayload(headers bool) unencryptedRequest {
 	return unencryptedRequest{
 		command: 0x6a,
-		payload: basicRequestPayload(0x1b),
+		payload: basicRequestPayload(0x1a, headers),
+	}
+}
+
+func checkRFData2Payload(headers bool) unencryptedRequest {
+	return unencryptedRequest{
+		command: 0x6a,
+		payload: basicRequestPayload(0x1b, headers),
 	}
 }
 
 // Based on the following paragraph from https://blog.ipsumdomus.com/broadlink-smart-home-devices-complete-protocol-hack-bc0b4b397af1:
 // Command (16 bytes message id 0x6a payload) always has Get (byte 0x1) or Set
 // (byte 0x2) at byte 0 and state (On — 0x1 and Off — 0x0) at byte 4.
-func setPowerStatePayload(state bool) unencryptedRequest {
+func setPowerStatePayload(state bool, headers bool) unencryptedRequest {
 	var stateValue byte
 	if state {
 		stateValue = 0x01
 	} else {
 		stateValue = 0x00
 	}
-	p := basicRequestPayload(0x02)
+	p := basicRequestPayload(0x02, headers)
 	p[4] = stateValue
 	return unencryptedRequest{
 		command: 0x6a,
@@ -657,15 +667,20 @@ func setPowerStatePayload(state bool) unencryptedRequest {
 	}
 }
 
-func getPowerStatePayload() unencryptedRequest {
+func getPowerStatePayload(headers bool) unencryptedRequest {
 	return unencryptedRequest{
 		command: 0x6a,
-		payload: basicRequestPayload(0x01),
+		payload: basicRequestPayload(0x01, headers),
 	}
 }
 
-func basicRequestPayload(command byte) []byte {
+func basicRequestPayload(command byte, headers bool) []byte {
 	payload := make([]byte, 16, 16)
-	payload[0] = command
+	if headers {
+		payload[0] = 0x04
+		payload[2] = command
+	} else {
+		payload[0] = command
+	}
 	return payload
 }
