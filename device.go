@@ -331,16 +331,16 @@ func (d *device) readPacket() (Response, error) {
 			processedPayload.Type = CommandOK
 		case 4:
 			processedPayload.Type = RawData
-			processedPayload.Data = make([]byte, len(payload)-offset, len(payload)-offset)
+			processedPayload.Data = make([]byte, len(payload)-4, len(payload)-4)
 			copy(processedPayload.Data, payload[offset:])
 		case 26:
-			processedPayload.Data = make([]byte, len(payload)-offset, len(payload)-offset)
+			processedPayload.Data = make([]byte, len(payload)-4, len(payload)-4)
 			copy(processedPayload.Data, payload[offset:])
 			if payload[offset] == 1 {
 				processedPayload.Type = RawRFData
 			}
 		case 27:
-			processedPayload.Data = make([]byte, len(payload)-offset, len(payload)-offset)
+			processedPayload.Data = make([]byte, len(payload)-4, len(payload)-4)
 			copy(processedPayload.Data, payload[offset:])
 			if payload[offset] == 1 {
 				processedPayload.Type = RawRFData2
