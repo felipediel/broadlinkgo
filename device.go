@@ -307,32 +307,42 @@ func (d *device) readPacket() (Response, error) {
 	}
 
 	if command == 0xee || command == 0xef {
-		param := payload[0]
 		errorCode := (int)(buf[0x22]) | ((int)(buf[0x23]) << 8)
 		if errorCode != 0 {
 			processedPayload.Type = DeviceError
 			return processedPayload, nil
 		}
+		
+		var param byte
+		var offset int
+		if d.headers {
+			param = payload[2]
+			offset = 6
+		} else {
+			param = payload[0]
+			offset = 4
+		}
+
 		switch param {
 		case 1:
 			processedPayload.Type = Temperature
-			processedPayload.Data = []byte{(payload[0x4]*10 + payload[0x5]) / 10}
+			processedPayload.Data = []byte{(payload[offset]*10 + payload[offset+1]) / 10}
 		case 2:
 			processedPayload.Type = CommandOK
 		case 4:
 			processedPayload.Type = RawData
-			processedPayload.Data = make([]byte, len(payload)-4, len(payload)-4)
-			copy(processedPayload.Data, payload[4:])
+			processedPayload.Data = make([]byte, len(payload)-offset, len(payload)-offset)
+			copy(processedPayload.Data, payload[offset:])
 		case 26:
-			processedPayload.Data = make([]byte, len(payload)-4, len(payload)-4)
-			copy(processedPayload.Data, payload[4:])
-			if payload[0x4] == 1 {
+			processedPayload.Data = make([]byte, len(payload)-offset, len(payload)-offset)
+			copy(processedPayload.Data, payload[offset:])
+			if payload[offset] == 1 {
 				processedPayload.Type = RawRFData
 			}
 		case 27:
-			processedPayload.Data = make([]byte, len(payload)-4, len(payload)-4)
-			copy(processedPayload.Data, payload[4:])
-			if payload[0x4] == 1 {
+			processedPayload.Data = make([]byte, len(payload)-offset, len(payload)-offset)
+			copy(processedPayload.Data, payload[offset:])
+			if payload[offset] == 1 {
 				processedPayload.Type = RawRFData2
 			}
 		}
@@ -588,11 +598,9 @@ func sendDataPayload(data []byte, headers bool) unencryptedRequest {
 		reqPayload[0] = 0xd0
 		reqPayload[2] = 0x02
 		copy(reqPayload[6:], data)
-		fmt.Println(reqPayload)
 	} else {
 		reqPayload[0] = 0x02
 		copy(reqPayload[4:], data)
-		fmt.Println(reqPayload)
 	}
 	return unencryptedRequest{
 		command: 0x6a,
