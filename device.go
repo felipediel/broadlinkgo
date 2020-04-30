@@ -326,7 +326,7 @@ func (d *device) readPacket() (Response, error) {
 		switch param {
 		case 1:
 			processedPayload.Type = Temperature
-			processedPayload.Data = []byte{(payload[offset]*10 + payload[offset+1]) / 10}
+			processedPayload.Data = []byte{(payload[0x4]*10 + payload[0x5]) / 10}
 		case 2:
 			processedPayload.Type = CommandOK
 		case 4:
